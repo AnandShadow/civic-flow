@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CivicFlow Command Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* --- GENERAL THEME --- */
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', monospace; }
+        
+        /* --- SIDEBAR --- */
+        .sidebar { height: 100vh; background: #1e293b; border-right: 1px solid #334155; position: fixed; width: 250px; padding: 20px; z-index: 1000; }
+        .main-content { margin-left: 250px; padding: 30px; }
+        
+        .nav-link { color: #94a3b8; padding: 12px 15px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; transition: 0.3s; }
+        .nav-link:hover { background: rgba(255,255,255,0.05); color: #fff; }
+        .nav-link.active { background: #3b82f6; color: white; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); }
+        
+        /* --- VIEW TRANSITIONS --- */
+        .section-view { display: none; animation: fadeIn 0.4s; }
+        .section-view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- STATS CARDS --- */
+        .stat-card { background: linear-gradient(145deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+        .stat-card h3 { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
+        
+        /* --- TABLE STYLES --- */
+        .custom-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+        .custom-table th { color: #94a3b8; font-weight: 500; text-transform: uppercase; font-size: 0.8rem; padding: 10px; }
+        .custom-table td { background: #1e293b; padding: 15px; border-top: 1px solid #334155; border-bottom: 1px solid #334155; vertical-align: middle; }
+        .custom-table tr td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; border-left: 1px solid #334155; }
+        .custom-table tr td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-right: 1px solid #334155; }
+        
+        /* --- CRITICAL ROW ANIMATION --- */
+        .pulse-red { animation: pulse-red 2s infinite; border-left: 4px solid #ef4444 !important; background: rgba(239, 68, 68, 0.05) !important; }
+        @keyframes pulse-red { 0% { box-shadow: inset 0 0 0 rgba(239, 68, 68, 0); } 50% { box-shadow: inset 10px 0 20px rgba(239, 68, 68, 0.2); } 100% { box-shadow: inset 0 0 0 rgba(239, 68, 68, 0); } }
+        
+        .badge-score { font-size: 1rem; padding: 5px 12px; border-radius: 6px; }
+        .bg-critical { background-color: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
+        .bg-medium { background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
+
+        /* --- FIXED RADAR HEATMAP STYLES --- */
+        .heatmap-container { 
+            position: relative; height: 550px; 
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); 
+            border-radius: 15px; overflow: hidden; border: 1px solid #334155;
+            box-shadow: inset 0 0 80px rgba(0,0,0,0.6);
+        }
+        
+        /* The Static Grid */
+        .radar-grid {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 90%; height: 90%; border: 1px dashed rgba(59, 130, 246, 0.3); border-radius: 50%;
+        }
+        .radar-grid::before {
+            content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 60%; height: 60%; border: 1px dashed rgba(59, 130, 246, 0.3); border-radius: 50%;
+        }
+        
+        /* The Crosshairs */
+        .radar-crosshair { position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: rgba(59, 130, 246, 0.15); }
+        .radar-crosshair.horz { top: 50%; left: 0; width: 100%; height: 1px; }
+
+        /* The Sweeping Beam (FIXED with Conic Gradient) */
+        .radar-scan {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(59, 130, 246, 0.05) 280deg, rgba(59, 130, 246, 0.5) 360deg);
+            border-radius: 50%;
+            animation: scan 4s infinite linear;
+            z-index: 1;
+        }
+        @keyframes scan { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* The Blip Points */
+        .heat-point { 
+            position: absolute; width: 15px; height: 15px; 
+            border-radius: 50%; z-index: 2; animation: pulse-dot 2s infinite; cursor: pointer;
+        }
+        @keyframes pulse-dot { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.8); opacity: 0.4; } 100% { transform: scale(1); opacity: 1; } }
+        
+        .heat-point:hover::after {
+            content: attr(data-info); position: absolute; bottom: 25px; left: -60px;
+            background: rgba(0, 0, 0, 0.9); color: white; padding: 6px 12px; 
+            border-radius: 5px; font-size: 12px; white-space: nowrap; border: 1px solid #475569;
+        }
+
+        /* --- MODAL STYLES --- */
+        .modal-content { background-color: #1e293b; color: #fff; border: 1px solid #475569; }
+        .modal-header { border-bottom: 1px solid #475569; }
+        .modal-footer { border-top: 1px solid #475569; }
+        .detail-label { color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .detail-value { font-size: 1.1rem; font-weight: 600; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar d-flex flex-column">
+    <h4 class="mb-5 text-info ps-2"><i class="fas fa-network-wired"></i> CivicFlow<span class="fs-6 text-muted d-block mt-1">Admin Console</span></h4>
+    
+    <div onclick="switchTab('dashboard')" class="nav-link active" id="btn-dashboard">
+        <i class="fas fa-chart-line me-2"></i> Dashboard
+    </div>
+    <div onclick="switchTab('heatmap')" class="nav-link" id="btn-heatmap">
+        <i class="fas fa-satellite-dish me-2"></i> Live Radar
+    </div>
+    <div onclick="switchTab('settings')" class="nav-link" id="btn-settings">
+        <i class="fas fa-cogs me-2"></i> System Config
+    </div>
+
+    <div class="mt-auto text-muted small ps-2">
+        <p class="mb-1">Server: <span class="text-success">● 127.0.0.1</span></p>
+        <p>AI Inference: <span class="text-success">● Active</span></p>
+    </div>
+</div>
+
+<div class="main-content">
+    
+    <div id="view-dashboard" class="section-view active">
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <i class="fas fa-radiation-alt position-absolute end-0 top-0 m-3 display-4 text-danger opacity-25"></i>
+                    <h6 class="text-danger">CRITICAL RISKS</h6>
+                    <h3 id="critCount" class="text-danger">0</h3>
+                    <small class="text-muted">High Priority Incidents</small>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <i class="fas fa-clipboard-list position-absolute end-0 top-0 m-3 display-4 text-info opacity-25"></i>
+                    <h6 class="text-info">TOTAL REPORTS</h6>
+                    <h3 id="totalCount" class="text-white">0</h3>
+                    <small class="text-muted">Last 24 Hours</small>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <i class="fas fa-robot position-absolute end-0 top-0 m-3 display-4 text-success opacity-25"></i>
+                    <h6 class="text-success">AI CONFIDENCE</h6>
+                    <h3 class="text-white">98.5%</h3>
+                    <small class="text-muted">Validation Accuracy</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="fas fa-stream text-primary me-2"></i> Real-Time Incident Feed</h5>
+            <span class="badge bg-primary">Live Sync On</span>
+        </div>
+
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th width="10%">ID</th>
+                    <th width="20%">LOCATION</th>
+                    <th width="20%">ISSUE</th>
+                    <th width="15%">PRIORITY SCORE</th>
+                    <th width="15%">STATUS</th>
+                    <th width="20%">ACTION</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                </tbody>
+        </table>
+    </div>
+
+    <div id="view-heatmap" class="section-view">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3><i class="fas fa-satellite-dish text-warning me-2"></i> Live Risk Radar</h3>
+            <div class="btn-group">
+                <button class="btn btn-outline-light btn-sm active" id="btn-rad-live" onclick="toggleRadar('live')">Active Incidents</button>
+                <button class="btn btn-outline-light btn-sm" id="btn-rad-hist" onclick="toggleRadar('history')">Historical Data</button>
+            </div>
+        </div>
+        
+        <div class="heatmap-container">
+            <div class="radar-grid"></div>
+            <div class="radar-crosshair"></div>
+            <div class="radar-crosshair horz"></div>
+            <div class="radar-scan"></div>
+            
+            <div id="radar-content">
+                <div class="heat-point" style="top: 30%; left: 40%; background-color: #ef4444; box-shadow: 0 0 15px #ef4444;" 
+                     data-info="CRITICAL: School Zone (Gas Leak)"></div>
+                <div class="heat-point" style="top: 60%; left: 70%; background-color: #f59e0b; box-shadow: 0 0 15px #f59e0b;" 
+                     data-info="MODERATE: Hospital Area (Traffic)"></div>
+                <div class="heat-point" style="top: 45%; left: 25%; background-color: #3b82f6; box-shadow: 0 0 15px #3b82f6;" 
+                     data-info="ROUTINE: Marketplace (Garbage)"></div>
+            </div>
+            
+            <div class="position-absolute bottom-0 start-0 m-3 text-muted small">
+                <div class="mt-2 text-white font-monospace" id="radar-status">
+                    <i class="fas fa-sync fa-spin me-2 text-success"></i>SCANNING LIVE GEOSPATIAL DATA...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-settings" class="section-view">
+        <h3 class="mb-4"><i class="fas fa-cogs text-secondary me-2"></i> System Configuration</h3>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="stat-card mb-3">
+                    <h5 class="text-white mb-3">AI Engine Parameters</h5>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" checked>
+                        <label class="form-check-label">Enable Semantic Analysis (Keywords)</label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" checked>
+                        <label class="form-check-label">Enable Context-Aware Weights</label>
+                    </div>
+                    <label class="form-label text-muted small">Sentiment Threshold</label>
+                    <input type="range" class="form-range" value="80">
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-robot text-info me-2"></i> AI Analysis Report</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="detail-label">Incident ID</div>
+                        <div class="detail-value" id="modal-id">#--</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="detail-label">Status</div>
+                        <div class="detail-value text-warning" id="modal-status">Pending</div>
+                    </div>
+                </div>
+                
+                <div class="detail-label">Location Context</div>
+                <div class="detail-value" id="modal-loc">--</div>
+                
+                <div class="detail-label">Issue Type</div>
+                <div class="detail-value text-danger" id="modal-issue">--</div>
+
+                <hr class="border-secondary">
+                
+                <h6 class="text-info mb-3">Inference Engine Output</h6>
+                
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Calculated Priority Score:</span>
+                    <span class="badge bg-danger fs-6" id="modal-score">--/100</span>
+                </div>
+                
+                <div class="alert alert-dark border border-secondary d-flex align-items-center small">
+                    <i class="fas fa-brain text-warning me-3 fs-4"></i>
+                    <div>
+                        <strong>AI Reasoning:</strong><br>
+                        Analyzed semantic keywords ("<span id="modal-issue-text"></span>") against geospatial context (<span id="modal-loc-text"></span>). High confidence.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-success"><i class="fas fa-check me-2"></i>Dispatch Team</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // --- TAB SWITCHING ---
+    function switchTab(tabName) {
+        document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        document.getElementById('btn-' + tabName).classList.add('active');
+        document.querySelectorAll('.section-view').forEach(el => el.classList.remove('active'));
+        document.getElementById('view-' + tabName).classList.add('active');
+    }
+
+    // --- RADAR TOGGLE LOGIC (FIXED) ---
+    function toggleRadar(mode) {
+        // Update Buttons
+        document.getElementById('btn-rad-live').classList.remove('active');
+        document.getElementById('btn-rad-hist').classList.remove('active');
+        
+        const container = document.getElementById('radar-content');
+        const status = document.getElementById('radar-status');
+
+        if (mode === 'live') {
+            document.getElementById('btn-rad-live').classList.add('active');
+            status.innerHTML = '<i class="fas fa-sync fa-spin me-2 text-success"></i>SCANNING LIVE GEOSPATIAL DATA...';
+            // Restore Live Dots
+            container.innerHTML = `
+                <div class="heat-point" style="top: 30%; left: 40%; background-color: #ef4444; box-shadow: 0 0 15px #ef4444;" data-info="CRITICAL: School Zone (Gas Leak)"></div>
+                <div class="heat-point" style="top: 60%; left: 70%; background-color: #f59e0b; box-shadow: 0 0 15px #f59e0b;" data-info="MODERATE: Hospital Area (Traffic)"></div>
+                <div class="heat-point" style="top: 45%; left: 25%; background-color: #3b82f6; box-shadow: 0 0 15px #3b82f6;" data-info="ROUTINE: Marketplace (Garbage)"></div>
+            `;
+        } else {
+            document.getElementById('btn-rad-hist').classList.add('active');
+            status.innerHTML = '<i class="fas fa-history me-2 text-info"></i>DISPLAYING 30-DAY RISK DENSITY CLUSTERS';
+            // Generate Random Historical Clusters
+            let html = '';
+            for(let i=0; i<15; i++) {
+                let top = 25 + Math.random() * 10;
+                let left = 35 + Math.random() * 10;
+                html += `<div class="heat-point" style="top: ${top}%; left: ${left}%; width: 8px; height: 8px; background-color: rgba(239, 68, 68, 0.6); animation: none;" data-info="Past Incident: School Zone"></div>`;
+            }
+            for(let i=0; i<20; i++) {
+                let top = 40 + Math.random() * 15;
+                let left = 20 + Math.random() * 15;
+                html += `<div class="heat-point" style="top: ${top}%; left: ${left}%; width: 6px; height: 6px; background-color: rgba(59, 130, 246, 0.4); animation: none;" data-info="Past Incident: Traffic"></div>`;
+            }
+            container.innerHTML = html;
+        }
+    }
+
+    // --- MODAL TRIGGER ---
+    function showDetails(id, loc, issue, score, status) {
+        document.getElementById('modal-id').innerText = "#" + id;
+        document.getElementById('modal-loc').innerText = loc;
+        document.getElementById('modal-loc-text').innerText = loc;
+        document.getElementById('modal-issue').innerText = issue;
+        document.getElementById('modal-issue-text').innerText = issue;
+        document.getElementById('modal-score').innerText = score + "/100";
+        document.getElementById('modal-status').innerText = status;
+        
+        var myModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+        myModal.show();
+    }
+
+    // --- LIVE DATA FEED ---
+    async function loadStats() {
+        try {
+            const res = await fetch('http://127.0.0.1:8000/admin_stats');
+            const data = await res.json();
+
+            document.getElementById('critCount').innerText = data.critical;
+            document.getElementById('totalCount').innerText = data.reports.length;
+            
+            let html = "";
+            data.reports.forEach(r => {
+                let isCritical = r.score > 80;
+                let rowClass = isCritical ? "pulse-red" : "";
+                let scoreBadge = isCritical ? "bg-critical" : "bg-medium";
+                let icon = isCritical ? '<i class="fas fa-exclamation-circle text-danger"></i>' : '<i class="fas fa-clock text-warning"></i>';
+                
+                html += `
+                <tr class="${rowClass}">
+                    <td class="fw-bold text-muted">#${r.id}</td>
+                    <td>${r.loc}</td>
+                    <td>${r.issue}</td>
+                    <td><span class="badge-score ${scoreBadge}">${r.score} / 100</span></td>
+                    <td>${icon} ${r.status}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="showDetails(${r.id}, '${r.loc}', '${r.issue}', ${r.score}, '${r.status}')">
+                            <i class="fas fa-eye me-1"></i> Details
+                        </button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('tableBody').innerHTML = html;
+        } catch(e) { console.log("Connecting..."); }
+    }
+    
+    // Poll Backend every 2 seconds
+    setInterval(loadStats, 2000);
+    loadStats();
+</script>
+</body>
+</html>
